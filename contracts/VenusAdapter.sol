@@ -4,6 +4,7 @@ pragma solidity 0.8.9;
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "../interfaces/IERC20UpgradeableExt.sol";
 import "../libs/BaseRelayRecipient.sol";
 import "./venus/ComptrollerInterface.sol";
 import "./venus/VBep20Interface.sol";
@@ -11,6 +12,15 @@ import "./venus/VBNBInterface.sol";
 
 contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient {
     using SafeERC20Upgradeable for IERC20Upgradeable;
+
+    struct TokenData {
+        address tokenAddress;
+        string symbol;
+        uint8 decimals;
+        address vTokenAddress;
+        string vTokenSymbol;
+        uint8 vTokenDecimals;
+    }
 
     ComptrollerInterface public immutable COMPTROLLER;
     VBNBInterface public immutable vBNB;
@@ -67,16 +77,37 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient {
             VTokenInterface vToken = VTokenInterface(vTokens[i]);
             if (address(vToken) == address(vBNB)) continue;
 
-            VBep20Interface vBep20 = VBep20Interface(address(vToken));
-            IERC20Upgradeable underlying = IERC20Upgradeable(vBep20.underlying());
-            if (underlying.allowance(address(this), address(vBep20)) == 0) {
-                underlying.safeApprove(address(vBep20), type(uint).max);
+            IERC20Upgradeable underlying = IERC20Upgradeable(VBep20Interface(address(vToken)).underlying());
+            if (underlying.allowance(address(this), address(vToken)) == 0) {
+                underlying.safeApprove(address(vToken), type(uint).max);
+            }
+        }
+    }
+
+    function getAllReservesTokens() external view returns (TokenData[] memory tokens) {
+        address[] memory vTokens = COMPTROLLER.getAllMarkets();
+        tokens = new TokenData[](vTokens.length);
+        for (uint i = 0; i < vTokens.length; i ++) {
+            VTokenInterface vToken = VTokenInterface(vTokens[i]);
+            tokens[i].vTokenAddress = address(vToken);
+            tokens[i].vTokenSymbol = vToken.symbol();
+            tokens[i].vTokenDecimals = vToken.decimals();
+
+            if (address(vToken) == address(vBNB)) {
+                tokens[i].tokenAddress = NATIVE_ASSET;
+                tokens[i].symbol = "BNB";
+                tokens[i].decimals = 18;
+            } else {
+                IERC20UpgradeableExt underlying = IERC20UpgradeableExt(VBep20Interface(address(vToken)).underlying());
+                tokens[i].tokenAddress = address(underlying);
+                tokens[i].symbol = underlying.symbol();
+                tokens[i].decimals = underlying.decimals();
             }
         }
     }
 
     /// @notice The user must approve this SC for the underlying asset.
-    function supply(VBep20Interface vBep20, uint amount) public {
+    function supply(VBep20Interface vBep20, uint amount) external {
         address account = _msgSender();
         IERC20Upgradeable underlying = IERC20Upgradeable(vBep20.underlying());
         underlying.safeTransferFrom(account, address(this), amount);
@@ -87,7 +118,7 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient {
         _postSupply(account, address(underlying), amount, vBep20, err);
     }
 
-    function supplyETH() public payable {
+    function supplyETH() external payable {
         address account = _msgSender();
         vBNB.mint{value: msg.value}();
         _postSupply(account, NATIVE_ASSET, msg.value, vBNB, NO_ERROR);

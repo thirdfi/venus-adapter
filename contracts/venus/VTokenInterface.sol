@@ -10,9 +10,9 @@ interface VTokenInterface {
     function borrowBalanceCurrent(address account) external returns (uint);
     function seize(address liquidator, address borrower, uint seizeTokens) external returns (uint);
 
-    function name() external view returns(string memory);
-    function symbol() external view returns(string memory);
-    function decimals() external view returns(uint8);
+    function name() external view returns (string memory);
+    function symbol() external view returns (string memory);
+    function decimals() external view returns (uint8);
     function balanceOf(address owner) external view returns (uint);
     function allowance(address owner, address spender) external view returns (uint);
     function getAccountSnapshot(address account) external view returns (uint, uint, uint, uint);
