@@ -19,8 +19,12 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient {
 
     uint internal constant NO_ERROR = 0;
 
-    event Mint(address indexed account, address indexed underlying, uint amount, address indexed vToken, uint minted);
-    event MintFail(address indexed account, address indexed vToken, uint errCode);
+    event Supply(address indexed account, address indexed vToken, address indexed underlying, uint amount, uint mintedTokens);
+    event SupplyFail(address indexed account, address indexed vToken, uint amount, uint errCode);
+    event Withdraw(address indexed account, address indexed vToken, uint redeemTokens, address indexed underlying, uint redeemedAmount);
+    event WithdrawFail(address indexed account, address indexed vToken, uint redeemTokens, uint errCode);
+    event Repay(address indexed account, address indexed vToken, address indexed underlying, uint amount);
+    event RepayFail(address indexed account, address indexed vToken, uint amount, uint errCode);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor(address _Comptroller, address _vBNB) {
@@ -71,36 +75,96 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient {
         }
     }
 
-    function mint(VBep20Interface vBep20, uint mintAmount) public returns (uint) {
+    /// @notice The user must approve this SC for the underlying asset.
+    function supply(VBep20Interface vBep20, uint amount) public {
         address account = _msgSender();
         IERC20Upgradeable underlying = IERC20Upgradeable(vBep20.underlying());
-        underlying.safeTransferFrom(account, address(this), mintAmount);
-        uint err = vBep20.mint(mintAmount);
-        return _postMint(account, address(underlying), mintAmount, vBep20, err);
+        underlying.safeTransferFrom(account, address(this), amount);
+        uint err = vBep20.mint(amount);
+        if (err != NO_ERROR) {
+            underlying.safeTransfer(account, amount);
+        }
+        _postSupply(account, address(underlying), amount, vBep20, err);
     }
 
-    function mintBNB() public payable returns (uint) {
+    function supplyETH() public payable {
         address account = _msgSender();
         vBNB.mint{value: msg.value}();
-        return _postMint(account, NATIVE_ASSET, msg.value, vBNB, NO_ERROR);
+        _postSupply(account, NATIVE_ASSET, msg.value, vBNB, NO_ERROR);
     }
 
-    function _postMint(address account, address underlying, uint mintAmount, VTokenInterface vToken, uint err) internal returns (uint) {
+    function _postSupply(address account, address underlying, uint amount, VTokenInterface vToken, uint err) internal {
         if (err == NO_ERROR) {
-            uint minted = vToken.balanceOf(address(this));
-            IERC20Upgradeable(address(vToken)).safeTransfer(account, minted);
-            emit Mint(account, underlying, mintAmount, address(vToken), minted);
-            return minted;
+            uint mintedTokens = vToken.balanceOf(address(this));
+            IERC20Upgradeable(address(vToken)).safeTransfer(account, mintedTokens);
+            emit Supply(account, address(vToken), underlying, amount, mintedTokens);
         } else {
-            emit MintFail(account, address(vToken), err);
-            return 0;
+            emit SupplyFail(account, address(vToken), amount, err);
         }
     }
 
-    function redeem(VBep20Interface vBep20, uint redeemTokens) external returns (uint) {
+    function withdraw(address vToken, uint redeemTokens) public {
+        address account = _msgSender();
+        uint amountToWithdraw = redeemTokens;
+        if (redeemTokens == type(uint).max) {
+            amountToWithdraw = VTokenInterface(vToken).balanceOf(account);
+        }
+
+        IERC20Upgradeable(vToken).safeTransferFrom(account, address(this), amountToWithdraw);
+        uint err = VBep20Interface(vToken).redeem(amountToWithdraw);
+        if (err != NO_ERROR) {
+            IERC20Upgradeable(vToken).safeTransfer(account, amountToWithdraw);
+            emit WithdrawFail(account, vToken, amountToWithdraw, err);
+        } else {
+            if (vToken == address(vBNB)) {
+                uint redeemedAmount = address(this).balance;
+                _safeTransferETH(account, redeemedAmount);
+                emit Withdraw(account, vToken, amountToWithdraw, NATIVE_ASSET, redeemedAmount);
+            } else {
+                IERC20Upgradeable underlying = IERC20Upgradeable(VBep20Interface(vToken).underlying());
+                uint redeemedAmount = underlying.balanceOf(address(this));
+                underlying.safeTransfer(account, redeemedAmount);
+                emit Withdraw(account, vToken, amountToWithdraw, address(underlying), redeemedAmount);
+            }
+        }
     }
 
-    function repayBorrowBehalf(VBep20Interface vBep20, address borrower, uint repayAmount) external returns (uint) {
+    /// @notice The user must approve this SC for the underlying asset.
+    function repay(VBep20Interface vBep20, uint amount) public {
+        address account = _msgSender();
+        uint paybackAmount = amount;
+        if (amount == type(uint).max) {
+            vBep20.accrueInterest();
+            paybackAmount = vBep20.borrowBalanceStored(account);
+        }
+
+        IERC20Upgradeable underlying = IERC20Upgradeable(vBep20.underlying());
+        underlying.safeTransferFrom(account, address(this), paybackAmount);
+        uint err = vBep20.repayBorrowBehalf(account, paybackAmount);
+
+        uint left = underlying.balanceOf(address(this));
+        if (left > 0) underlying.safeTransfer(account, left);
+        if (err == NO_ERROR) {
+            emit Repay(account, address(vBep20), address(underlying), paybackAmount-left);
+        } else {
+            emit RepayFail(account, address(vBep20), paybackAmount, err);
+        }
+    }
+
+    function repayETH(uint amount) public payable {
+        address account = _msgSender();
+        uint paybackAmount = amount;
+        if (amount == type(uint).max) {
+            vBNB.accrueInterest();
+            paybackAmount = vBNB.borrowBalanceStored(account);
+        }
+
+        require(msg.value >= paybackAmount, 'msg.value is less than repayment amount');
+        vBNB.repayBorrowBehalf{value: paybackAmount}(account);
+
+        uint left = address(this).balance;
+        if (left > 0) _safeTransferETH(account, left);
+        emit Repay(account, address(vBNB), NATIVE_ASSET, msg.value-left);
     }
 
     /**
