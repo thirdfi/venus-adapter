@@ -1,6 +1,20 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.9;
 
+interface PriceOracleInterface {
+    /**
+     * @notice Get the underlying price of a vToken asset
+     * @param vToken The vToken to get the underlying price of
+     * @return The underlying asset price mantissa (scaled by 1e18).
+     *  Zero means the price is unavailable.
+     */
+    function getUnderlyingPrice(address vToken) external view returns (uint);
+}
+
+interface VAIControllerInterface {
+    function getVAIRepayAmount(address account) external view returns (uint);
+}
+
 interface ComptrollerInterface {
     function enterMarkets(address[] calldata vTokens) external returns (uint[] memory);
     function exitMarket(address vToken) external returns (uint);
@@ -73,8 +87,8 @@ interface ComptrollerInterface {
 
     function setMintedVAIOf(address owner, uint amount) external returns (uint);
 
-    function markets(address) external view returns (bool, uint);
-    function oracle() external view returns (address);
+    function markets(address) external view returns (bool isListed, uint collateralFactorMantissa, bool isVenus);
+    function oracle() external view returns (PriceOracleInterface);
     function getAccountLiquidity(address) external view returns (uint, uint, uint);
     function getAssetsIn(address) external view returns (address[] memory);
     function claimVenus(address) external;
@@ -87,4 +101,5 @@ interface ComptrollerInterface {
     function venusBorrowerIndex(address, address) external view returns (uint);
     function venusBorrowState(address) external view returns (uint224, uint32);
     function venusSupplyState(address) external view returns (uint224, uint32);
+    function vaiController() external view returns (VAIControllerInterface);
 }

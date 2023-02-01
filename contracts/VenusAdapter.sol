@@ -9,8 +9,9 @@ import "../libs/BaseRelayRecipient.sol";
 import "./venus/ComptrollerInterface.sol";
 import "./venus/VBep20Interface.sol";
 import "./venus/VBNBInterface.sol";
+import "./venus/Lens.sol";
 
-contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient {
+contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient, Lens {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     struct TokenData {
@@ -20,6 +21,9 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient {
         address vTokenAddress;
         string vTokenSymbol;
         uint8 vTokenDecimals;
+
+        uint ltv; // scaled by 1e4
+        bool rewardEnabled;
     }
 
     ComptrollerInterface public immutable COMPTROLLER;
@@ -103,7 +107,39 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient {
                 tokens[i].symbol = underlying.symbol();
                 tokens[i].decimals = underlying.decimals();
             }
+
+            (, uint collateralFactorMantissa, bool isVenus) = COMPTROLLER.markets(address(vToken));
+            tokens[i].ltv = collateralFactorMantissa / 1e14; // change the scale from 18 to 4
+            tokens[i].rewardEnabled = isVenus;
         }
+    }
+
+    /**
+    * @notice Returns the user account data across all the reserves
+    * @param user The address of the user
+    * @return totalCollateral The total collateral of the user in USD. The unit is 100000000
+    * @return totalDebt The total debt of the user in USD
+    * @return availableBorrows The borrowing power left of the user in USD
+    * @return currentLiquidationThreshold The liquidation threshold of the user
+    * @return ltv The loan to value of The user
+    * @return healthFactor The current health factor of the user
+    */
+    function getUserAccountData(address user) external view returns (
+        uint totalCollateral,
+        uint totalDebt,
+        uint availableBorrows,
+        uint currentLiquidationThreshold,
+        uint ltv,
+        uint healthFactor
+    ) {
+        (totalCollateral, totalDebt, availableBorrows, ltv) = getAccountPosition(address(COMPTROLLER), user);
+        totalCollateral = totalCollateral / 1e10; // change the scale from 18 to 8
+        totalDebt = totalDebt / 1e10; // change the scale from 18 to 8
+        availableBorrows = availableBorrows / 1e10; // change the scale from 18 to 8
+        currentLiquidationThreshold = ltv; // The average liquidation threshold is same with average collateral factor in the Venus
+        healthFactor = totalDebt == 0
+            ? type(uint).max
+            : totalCollateral * ltv / totalDebt;
     }
 
     /// @notice The user must approve this SC for the underlying asset.
@@ -196,6 +232,22 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient {
         uint left = address(this).balance;
         if (left > 0) _safeTransferETH(account, left);
         emit Repay(account, address(vBNB), NATIVE_ASSET, msg.value-left);
+    }
+
+    function repayAndWithdraw(
+        VBep20Interface repayVBep20, uint repayAmount,
+        VTokenInterface withdrawalVToken, uint redeemTokens
+    ) external {
+        repay(repayVBep20, repayAmount);
+        withdraw(address(withdrawalVToken), redeemTokens);
+    }
+
+    function repayETHAndWithdraw(
+        uint repayAmount,
+        VTokenInterface withdrawalVToken, uint redeemTokens
+    ) external payable {
+        repayETH(repayAmount);
+        withdraw(address(withdrawalVToken), redeemTokens);
     }
 
     /**

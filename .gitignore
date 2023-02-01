@@ -16,6 +16,8 @@ deployments/arbitrumMainnet/solcInputs
 deployments/arbitrumTestnet/solcInputs
 deployments/avaxMainnet/solcInputs
 deployments/avaxTestnet/solcInputs
+deployments/bscMainnet/solcInputs
+deployments/bscTestnet/solcInputs
 deployments/ethMainnet/solcInputs
 deployments/ethGoerli/solcInputs
 deployments/maticMainnet/solcInputs

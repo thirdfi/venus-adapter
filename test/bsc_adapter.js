@@ -69,6 +69,7 @@ describe("Adapter on BSC", async () => {
       await usdt.approve(adapter.address, MaxUint256);
       await usdc.approve(adapter.address, MaxUint256);
       await vUSDT.approve(adapter.address, MaxUint256);
+      await comptroller.enterMarkets([vUSDT.address]);
 
       // deposit
       await adapter.supply(vUSDT.address, getUsdtAmount('10000'));
@@ -76,11 +77,8 @@ describe("Adapter on BSC", async () => {
       expect(await vUSDT.balanceOf(a1.address)).gt(0);
 
       // borrow
-      await comptroller.enterMarkets([vUSDT.address]);
       await vUSDC.borrow(getUsdcAmount('1000'));
       expect(await usdc.balanceOf(a1.address)).equal(getUsdcAmount('1100'));
-
-      await increaseTime(10 * DAY);
 
       // repay
       await adapter.repay(vUSDC.address, MaxUint256);
@@ -109,7 +107,7 @@ describe("Adapter on BSC", async () => {
       await vBNB.borrow(parseEther('10'));
       expect(await etherBalance(a1.address)).closeTo(prevBalance.add(parseEther('10')), parseEther('0.01'));
 
-      await increaseTime(10 * DAY);
+      // await increaseTime(10 * DAY);
 
       // repay
       await adapter.repayETH(MaxUint256, {value: parseEther('10.1')});
@@ -138,7 +136,7 @@ describe("Adapter on BSC", async () => {
       await vUSDC.borrow(getUsdcAmount('1000'));
       expect(await usdc.balanceOf(a1.address)).equal(getUsdcAmount('1100'));
 
-      await increaseTime(10 * DAY);
+      // await increaseTime(10 * DAY);
 
       // repay
       await adapter.repay(vUSDC.address, MaxUint256);
@@ -151,5 +149,34 @@ describe("Adapter on BSC", async () => {
       expect(await etherBalance(a1.address)).closeTo(prevBalance, parseEther('0.01'));
     });
 
+    it("Should be correctly worked with the merged methods", async () => {
+      await usdt.connect(deployer).transfer(a1.address, getUsdtAmount('10000'));
+      await usdc.connect(deployer).transfer(a1.address, getUsdcAmount('100'));
+      await usdt.approve(adapter.address, MaxUint256);
+      await usdc.approve(adapter.address, MaxUint256);
+      await vUSDT.approve(adapter.address, MaxUint256);
+
+      // deposit
+      await adapter.supply(vUSDT.address, getUsdtAmount('10000'));
+      expect(await usdt.balanceOf(a1.address)).equal(0);
+      expect(await vUSDT.balanceOf(a1.address)).gt(0);
+
+      // borrow
+      await comptroller.enterMarkets([vUSDT.address]);
+      await vUSDC.borrow(getUsdcAmount('1000'));
+      expect(await usdc.balanceOf(a1.address)).equal(getUsdcAmount('1100'));
+
+      // await increaseTime(10 * DAY);
+
+      // repay & withdraw
+      await adapter.repayAndWithdraw(
+        vUSDC.address, MaxUint256,
+        vUSDT.address, await vUSDT.balanceOf(a1.address)
+      );
+      expect(await vUSDC.borrowBalanceStored(a1.address)).equal(0);
+      expect(await usdc.balanceOf(a1.address)).lte(getUsdcAmount('100'));
+      expect(await vUSDT.balanceOf(a1.address)).equal(0);
+      expect(await usdt.balanceOf(a1.address)).gte(getUsdtAmount('10000'));
+    });
   });
 });
