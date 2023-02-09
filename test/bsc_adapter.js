@@ -143,10 +143,10 @@ describe("Adapter on BSC", async () => {
       expect(await usdc.balanceOf(a1.address)).lte(getUsdcAmount('100'));
       expect(await vUSDC.borrowBalanceStored(a1.address)).equal(0);
 
-      // withdraw
-      await adapter.withdraw(vBNB.address, await vBNB.balanceOf(a1.address));
-      expect(await vBNB.balanceOf(a1.address)).equal(0);
-      expect(await etherBalance(a1.address)).closeTo(prevBalance, parseEther('0.01'));
+      // // withdraw
+      // await adapter.withdraw(vBNB.address, await vBNB.balanceOf(a1.address));
+      // expect(await vBNB.balanceOf(a1.address)).equal(0);
+      // expect(await etherBalance(a1.address)).closeTo(prevBalance, parseEther('0.01'));
     });
 
     it("Should be correctly worked with the merged methods", async () => {

@@ -120,9 +120,9 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient, Lens {
     * @return totalCollateral The total collateral of the user in USD. The unit is 100000000
     * @return totalDebt The total debt of the user in USD
     * @return availableBorrows The borrowing power left of the user in USD
-    * @return currentLiquidationThreshold The liquidation threshold of the user
-    * @return ltv The loan to value of The user
-    * @return healthFactor The current health factor of the user
+    * @return currentLiquidationThreshold The liquidation threshold of the user. The unit is 10000
+    * @return ltv The loan to value of The user. The unit is 10000
+    * @return healthFactor The current health factor of the user. The unit is 10000
     */
     function getUserAccountData(address user) external view returns (
         uint totalCollateral,
@@ -171,6 +171,9 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient, Lens {
     }
 
     function withdraw(address vToken, uint redeemTokens) public {
+        // It causes "Out of gas" in transferring BNB to the VenusAdapter SC, because vBNB transfers out BNB by "to.transfer(amount);"
+        require (vToken != address(vBNB), "not vBNB supported");
+
         address account = _msgSender();
         uint amountToWithdraw = redeemTokens;
         if (redeemTokens == type(uint).max) {
@@ -183,16 +186,16 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient, Lens {
             IERC20Upgradeable(vToken).safeTransfer(account, amountToWithdraw);
             emit WithdrawFail(account, vToken, amountToWithdraw, err);
         } else {
-            if (vToken == address(vBNB)) {
-                uint redeemedAmount = address(this).balance;
-                _safeTransferETH(account, redeemedAmount);
-                emit Withdraw(account, vToken, amountToWithdraw, NATIVE_ASSET, redeemedAmount);
-            } else {
+            // if (vToken == address(vBNB)) {
+            //     uint redeemedAmount = address(this).balance;
+            //     _safeTransferETH(account, redeemedAmount);
+            //     emit Withdraw(account, vToken, amountToWithdraw, NATIVE_ASSET, redeemedAmount);
+            // } else {
                 IERC20Upgradeable underlying = IERC20Upgradeable(VBep20Interface(vToken).underlying());
                 uint redeemedAmount = underlying.balanceOf(address(this));
                 underlying.safeTransfer(account, redeemedAmount);
                 emit Withdraw(account, vToken, amountToWithdraw, address(underlying), redeemedAmount);
-            }
+            // }
         }
     }
 
@@ -201,8 +204,7 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient, Lens {
         address account = _msgSender();
         uint paybackAmount = amount;
         if (amount == type(uint).max) {
-            vBep20.accrueInterest();
-            paybackAmount = vBep20.borrowBalanceStored(account);
+            paybackAmount = vBep20.borrowBalanceCurrent(account);
         }
 
         IERC20Upgradeable underlying = IERC20Upgradeable(vBep20.underlying());
@@ -222,8 +224,7 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient, Lens {
         address account = _msgSender();
         uint paybackAmount = amount;
         if (amount == type(uint).max) {
-            vBNB.accrueInterest();
-            paybackAmount = vBNB.borrowBalanceStored(account);
+            paybackAmount = vBNB.borrowBalanceCurrent(account);
         }
 
         require(msg.value >= paybackAmount, 'msg.value is less than repayment amount');
