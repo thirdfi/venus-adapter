@@ -222,9 +222,10 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient, Lens {
 
     function repayETH(uint amount) public payable {
         address account = _msgSender();
-        uint paybackAmount = amount;
-        if (amount == type(uint).max) {
-            paybackAmount = vBNB.borrowBalanceCurrent(account);
+
+        uint paybackAmount = vBNB.borrowBalanceCurrent(account);
+        if (amount < paybackAmount) {
+            paybackAmount = amount;
         }
 
         require(msg.value >= paybackAmount, 'msg.value is less than repayment amount');
