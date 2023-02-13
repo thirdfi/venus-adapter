@@ -22,6 +22,7 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient, Lens {
         string vTokenSymbol;
         uint8 vTokenDecimals;
 
+        bool isActive; // Whether or not this market is activated
         uint ltv; // scaled by 1e4
         bool rewardEnabled;
     }
@@ -108,7 +109,8 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient, Lens {
                 tokens[i].decimals = underlying.decimals();
             }
 
-            (, uint collateralFactorMantissa, bool isVenus) = COMPTROLLER.markets(address(vToken));
+            (bool isListed, uint collateralFactorMantissa, bool isVenus) = COMPTROLLER.markets(address(vToken));
+            tokens[i].isActive = isListed;
             tokens[i].ltv = collateralFactorMantissa / 1e14; // change the scale from 18 to 4
             tokens[i].rewardEnabled = isVenus;
         }
