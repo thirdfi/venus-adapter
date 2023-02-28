@@ -16,6 +16,18 @@ interface VAIControllerInterface {
 }
 
 interface ComptrollerInterface {
+    enum Action {
+        MINT,
+        REDEEM,
+        BORROW,
+        REPAY,
+        SEIZE,
+        LIQUIDATE,
+        TRANSFER,
+        ENTER_MARKET,
+        EXIT_MARKET
+    }
+
     function enterMarkets(address[] calldata vTokens) external returns (uint[] memory);
     function exitMarket(address vToken) external returns (uint);
 
@@ -84,6 +96,8 @@ interface ComptrollerInterface {
         address vTokenCollateral,
         uint repayAmount
     ) external view returns (uint, uint);
+
+    function actionPaused(address market, Action action) external view returns (bool);
 
     function setMintedVAIOf(address owner, uint amount) external returns (uint);
 

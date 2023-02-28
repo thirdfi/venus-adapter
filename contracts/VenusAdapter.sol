@@ -16,14 +16,15 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient, Lens {
 
     struct TokenData {
         address tokenAddress;
-        string symbol;
-        uint8 decimals;
         address vTokenAddress;
+        string symbol;
         string vTokenSymbol;
+        uint8 decimals;
         uint8 vTokenDecimals;
 
-        bool isActive; // Whether or not this market is activated
         uint ltv; // scaled by 1e4
+        bool isActive; // Whether or not this market is activated
+        bool isPaused; // Whether or not this market is paused
         bool rewardEnabled;
     }
 
@@ -76,10 +77,23 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient, Lens {
 
     function _approvePool() internal {
         address[] memory vTokens = COMPTROLLER.getAllMarkets();
-        COMPTROLLER.enterMarkets(vTokens);
+        uint totalCount = vTokens.length;
+        bool[] memory isPaused = new bool[](totalCount);
+        uint unpausedCount;
+        for (uint i; i < totalCount; i++) {
+            isPaused[i] = COMPTROLLER.actionPaused(address(vTokens[i]), ComptrollerInterface.Action.ENTER_MARKET);
+            if (!isPaused[i]) unpausedCount ++;
+        }
 
-        for (uint i = 0; i < vTokens.length; i++) {
-            VTokenInterface vToken = VTokenInterface(vTokens[i]);
+        address[] memory markets = new address[](unpausedCount);
+        uint unpausedIndex;
+        for (uint i; i < totalCount; i++) {
+            if (!isPaused[i]) markets[unpausedIndex ++] = vTokens[i];
+        }
+        COMPTROLLER.enterMarkets(markets);
+
+        for (uint i = 0; i < unpausedCount; i++) {
+            VTokenInterface vToken = VTokenInterface(markets[i]);
             if (address(vToken) == address(vBNB)) continue;
 
             IERC20Upgradeable underlying = IERC20Upgradeable(VBep20Interface(address(vToken)).underlying());
@@ -113,6 +127,9 @@ contract VenusAdapter is OwnableUpgradeable, BaseRelayRecipient, Lens {
             tokens[i].isActive = isListed;
             tokens[i].ltv = collateralFactorMantissa / 1e14; // change the scale from 18 to 4
             tokens[i].rewardEnabled = isVenus;
+
+            tokens[i].isPaused = COMPTROLLER.actionPaused(address(vToken), ComptrollerInterface.Action.ENTER_MARKET);
+
         }
     }
 
