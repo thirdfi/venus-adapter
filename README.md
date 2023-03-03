@@ -1,4 +1,6 @@
-# securo-venus-adapter
+# Venus Adapter
+
+These contracts are used for simplifying the borrowing and lending on Venus protocols. 
 
 ## Deploy and Verify contracts
 
